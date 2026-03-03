@@ -16,15 +16,15 @@ type ExperienceService interface {
 	FindById(id int) (entity.Experience, bool)
 }
 
-type ExpecienceService struct {
+type experienceService struct {
 	db *pgx.Conn
 }
 
 func NewExperienceService(db *pgx.Conn) ExperienceService {
-	return &ExpecienceService{db: db}
+	return &experienceService{db: db}
 }
 
-func (service *ExpecienceService) Save(experience entity.Experience) entity.Experience {
+func (service *experienceService) Save(experience entity.Experience) entity.Experience {
 	ctx := context.Background()
 	// Convert skills slice to comma-separated string
 	skillsStr := strings.Join(experience.Skills, ",")
@@ -41,7 +41,7 @@ func (service *ExpecienceService) Save(experience entity.Experience) entity.Expe
 	return experience
 }
 
-func (service *ExpecienceService) FindAll() []entity.Experience {
+func (service *experienceService) FindAll() []entity.Experience {
 	ctx := context.Background()
 	rows, err := service.db.Query(ctx, `SELECT id, title, description, skills, start_date, end_date FROM experience`)
 	if err != nil {
@@ -66,7 +66,7 @@ func (service *ExpecienceService) FindAll() []entity.Experience {
 	return experiences
 }
 
-func (service *ExpecienceService) FindById(id int) (entity.Experience, bool) {
+func (service *experienceService) FindById(id int) (entity.Experience, bool) {
 	ctx := context.Background()
 	var experience entity.Experience
 	var skillsStr string
@@ -80,7 +80,7 @@ func (service *ExpecienceService) FindById(id int) (entity.Experience, bool) {
 	return experience, true
 }
 
-func (service *ExpecienceService) Delete(id int) {
+func (service *experienceService) Delete(id int) {
 	ctx := context.Background()
 	_, err := service.db.Exec(ctx, `DELETE FROM experience WHERE id = $1`, id)
 	if err != nil {
@@ -88,7 +88,7 @@ func (service *ExpecienceService) Delete(id int) {
 	}
 }
 
-func (service *ExpecienceService) Update(id int, updateData entity.Experience) entity.Experience {
+func (service *experienceService) Update(id int, updateData entity.Experience) entity.Experience {
 	ctx := context.Background()
 	// Convert skills slice to comma-separated string
 	skillsStr := strings.Join(updateData.Skills, ",")
