@@ -19,7 +19,6 @@ import (
 	"gitlab.com/pragmaticreviews/golang-gin-poc/entity"
 
 	"log" // log for logging error messages
-	"encoding/json" // encoding/json for marshaling user data
 	"github.com/lengzuo/supa/dto" // dto for sign up and sign in request body
 	"github.com/joho/godotenv" // godotenv for loading environment variables
 	"github.com/jackc/pgx/v5" // pgx for connecting to Supabase database (if needed in the future)
@@ -29,6 +28,8 @@ import (
 var (
 	projectService    service.ProjectService // projectService is the service layer for handling project-related business logic
 	projectController controller.ProjectController // projectController is the controller layer for handling HTTP requests related to projects
+	experienceService    service.ExperienceService // experienceService is the service layer for handling experience-related business logic
+	experienceController controller.ExperienceController // experienceController is the controller layer for handling HTTP requests related to experiences
 	supaClient        *supabase.Client // supaClient is the Supabase client for interacting with Supabase services
 )
 
@@ -36,9 +37,9 @@ func main() {
 
 	// load environment variables from .env file
 	err := godotenv.Load()
-    if err != nil {
-        log.Fatal("Error loading .env file")
-    }
+    // if err != nil {
+    //     log.Fatal("Error loading .env file")
+    // }
 
 	// Connect to the Supabase database using pgx
 	conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
@@ -57,7 +58,11 @@ func main() {
 
 	// Initialize the project service and controller with database connection
 	projectService = service.NewProjectService(conn)
-	projectController = controller.New(projectService)
+	projectController = controller.NewProjectController(projectService)
+
+	// Initialize the experience service and controller with database connection
+	experienceService = service.NewExperienceService(conn)
+	experienceController = controller.NewExperienceController(experienceService)
 
 	// Supabase configuration
 	conf := supabase.Config{
@@ -92,6 +97,18 @@ func main() {
 		projectRoutes.GET("/:id", getSpesificProject)
     }
 
+	// Define experience routes with authentication middleware
+	// The AuthMiddleware will check if the user is authenticated before allowing access to the experience routes
+	experienceRoutes := server.Group("/experiences")
+	experienceRoutes.Use(AuthMiddleware(supaClient))
+	{
+		experienceRoutes.GET("/", getExperiences)
+		experienceRoutes.POST("/", createExperience)
+		experienceRoutes.DELETE("/:id", deleteExperience)
+		experienceRoutes.PUT("/:id", updateExperience)
+		experienceRoutes.GET("/:id", findExperienceById)
+	}
+
 	// Define authentication routes without authentication middleware, since these routes are for logging in and signing up
 	authRoutes := server.Group("/auth") // Use Gin's built-in logger for auth routes
 	{
@@ -103,6 +120,37 @@ func main() {
 
 	// run the server 
 	server.Run(":8080")
+}
+
+// ================================
+// Authentication middleware and handlers
+// ================================
+
+func AuthMiddleware(supaClient *supabase.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := c.GetHeader("Authorization")
+		if token == "" {
+			c.JSON(401, gin.H{"error": "Authorization header required"})
+			c.Abort()
+			return
+		}
+
+		if len(token) > 7 && token[:7] == "Bearer " {
+			token = token[7:] // Remove "Bearer " prefix
+		} 
+
+		// In Gin, the context is 'c', but Supabase needs 'context.Background()' or 'c.Request.Context()'
+		user, err := supaClient.Auth.User(c.Request.Context(), token)
+		if err != nil {
+			c.JSON(401, gin.H{"error": "Invalid token"})
+			c.Abort()
+			return
+		}
+
+		// Set the user information in the Gin context so that it can be accessed in the handlers
+		c.Set("user", user)
+		c.Next()
+	}
 }
 
 func Login(ctx *gin.Context) {
@@ -128,7 +176,6 @@ func Login(ctx *gin.Context) {
 
 	ctx.JSON(200, gin.H{"message": "User signed in successfully", "user": resp.User, "token": resp.AccessToken})
 }
-
 
 func SignUp(ctx *gin.Context) {
 	// bind the JSON request body to a struct and pass it to the sign up method of the Supabase client
@@ -228,6 +275,10 @@ func Logout(ctx *gin.Context) {
 	ctx.JSON(200, gin.H{"message": "User signed out successfully"})
 }
 
+// ================================
+// Project handlers
+// ================================
+
 func getProjects(ctx *gin.Context) {
 	// call the find all method of the project controller and return the result as JSON response
 	projects := projectController.FindAll()
@@ -293,77 +344,68 @@ func updateProject(ctx *gin.Context) {
 	ctx.JSON(200, project)
 }
 
-func AuthMiddleware(supaClient *supabase.Client) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		token := c.GetHeader("Authorization")
-		if token == "" {
-			c.JSON(401, gin.H{"error": "Authorization header required"})
-			c.Abort()
-			return
-		}
+// ===============================
+// Experinces handlers
+// ===============================
 
-		if len(token) > 7 && token[:7] == "Bearer " {
-			token = token[7:] // Remove "Bearer " prefix
-		} 
-
-		// In Gin, the context is 'c', but Supabase needs 'context.Background()' or 'c.Request.Context()'
-		user, err := supaClient.Auth.User(c.Request.Context(), token)
-		if err != nil {
-			c.JSON(401, gin.H{"error": "Invalid token"})
-			c.Abort()
-			return
-		}
-
-		// Set the user information in the Gin context so that it can be accessed in the handlers
-		c.Set("user", user)
-		c.Next()
-	}
+func getExperiences(ctx *gin.Context) {
+	// call the find all method of the experience controller and return the result as JSON response
+	experiences := experienceController.FindAll()
+	ctx.JSON(200, experiences)
 }
 
-func signUp(supaClient *supabase.Client) {
-	ctx := context.Background()
-	// Sign up a new user with email and password
-	// user, err := supaClient.Auth.SignUpWithEmail(email, password)
-	body := dto.SignUpRequest{
-		Email: "faradisy20@gmail.com",
-		Password: "20Januari",
-	}
+func createExperience(ctx *gin.Context) {
+	// bind the JSON request body to a experience entity and pass it to the save method of the experience controller
+	savedExperience := experienceController.Save(ctx)
+	ctx.JSON(201, savedExperience)
+}
 
-	resp, err := supaClient.Auth.SignUp(ctx, body)
+func deleteExperience(ctx *gin.Context) {
+	// get the title parameter from the URL and pass it to the delete method of the experience controller
+	id := ctx.Param("id")
+	// Convert the id string to an integer
+	idInt, err := strconv.Atoi(id)
+
 	if err != nil {
-		log.Printf("Error signing up: %v", err)
+		log.Printf("Error converting id to integer: %v", err)
+		ctx.JSON(400, gin.H{"error": "Invalid experience ID"})
 		return
 	}
 
-    bytes, _ := json.Marshal(resp)
-    fmt.Printf("sign up success: %s", bytes)
+	experienceController.Delete(idInt)
+
+	// Cek apakah experience dengan title tersebut ada atau tidak, jika tidak ada maka return 404
+	ctx.Status(204)
 }
 
-// Create a local struct to replace the missing 'dto' package
-type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-func signIn(supaClient *supabase.Client) {
-	// 1. You must define ctx (use context.Background() for standalone functions)
-	ctx := context.Background()
-
-	body := dto.SignInRequest{
-		Email: "faradisy20@gmail.com",
-		Password: "20Januari",
-	}
-
-	// 2. The library uses .Login(), not .SignIn()
-	// 3. Use := to declare resp and err for the first time
-	resp, err := supaClient.Auth.SignInWithPassword(ctx, body)
+func updateExperience(ctx *gin.Context) {
+	// get the title parameter from the URL and pass it to the delete method of the experience controller
+	idInt, err := strconv.Atoi(ctx.Param("id"))
 
 	if err != nil {
-		log.Printf("Error signing in: %v", err)
+		log.Printf("Error converting id to integer: %v", err)
+		ctx.JSON(400, gin.H{"error": "Invalid experience ID"})
 		return
 	}
 
-	fmt.Printf("User signed in: %v\n", resp.AccessToken)
+	// bind the JSON request body to a experience entity and pass it to the update method of the experience controller
+	var updateData entity.Experience
+	ctx.BindJSON(&updateData)
+	experience := experienceController.Update(idInt, updateData)
+	ctx.JSON(200, experience)
 }
 
-
+func findExperienceById(ctx *gin.Context) {
+	idInt, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		log.Printf("Error converting id to integer: %v", err)
+		ctx.JSON(400, gin.H{"error": "Invalid experience ID"})
+		return
+	}
+	experience, found := experienceController.FindById(idInt)
+	if !found {
+		ctx.JSON(404, gin.H{"error": "Experience not found"})
+		return
+	}
+	ctx.JSON(200, experience)
+}
